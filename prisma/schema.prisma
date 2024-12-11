@@ -1,0 +1,476 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "fullTextIndex"]
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  name          String?
+  email         String    @unique
+  emailSettings EmailSettings?
+  socialAccounts SocialAccount[]
+  password      String
+  role          Role      @default(USER)
+  plan          SubscriptionPlan @default(FREE)
+  status        UserStatus @default(ACTIVE)
+  subscription  Subscription?
+  lastLogin     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  forms         Form[]    @relation("CreatedForms")
+  submissions   FormSubmission[]
+  activityLogs  ActivityLog[]
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  USER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum SubscriptionPlan {
+  FREE
+  PREMIUM
+}
+
+model Subscription {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String    @unique @db.ObjectId
+  user          User      @relation(fields: [userId], references: [id])
+  status        SubscriptionStatus @default(ACTIVE)
+  startDate     DateTime  @default(now())
+  endDate       DateTime?
+  currentPeriodStart DateTime @default(now())
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  usage         SubscriptionUsage?
+}
+
+model SubscriptionUsage {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  subscriptionId String   @unique @db.ObjectId
+  subscription  Subscription @relation(fields: [subscriptionId], references: [id])
+  formsCreated  Int      @default(0)
+  submissions   Int      @default(0)
+  storage       Int      @default(0)
+  apiCalls      Int      @default(0)
+  pdfTemplates  Int      @default(0)
+  updatedAt     DateTime @updatedAt
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+}
+
+model Form {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  title         String
+  description   String?
+  type          FormType
+  fields        Json
+  published     Boolean   @default(false)
+  status        FormStatus @default(DRAFT)
+  pdfTemplates  PdfTemplate[]
+  settings      Json?
+  version       Int       @default(1)
+  shareableLink String?   @unique
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdBy     User      @relation("CreatedForms", fields: [userId], references: [id])
+  userId        String    @db.ObjectId
+  submissions   FormSubmission[]
+  analytics     FormAnalytics?
+  payments      Payment[]
+  events        Event[]
+}
+
+model PdfTemplate {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  formId        String    @db.ObjectId
+  form          Form      @relation(fields: [formId], references: [id])
+  name          String
+  description   String?
+  elements      Json
+  settings      Json
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+enum FormType {
+  GUEST_RECEPTION
+  BILLING
+  EVENT
+}
+
+enum FormStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+  DELETED
+}
+
+model FormSubmission {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  formId        String    @db.ObjectId
+  form          Form      @relation(fields: [formId], references: [id])
+  userId        String    @db.ObjectId
+  user          User      @relation(fields: [userId], references: [id])
+  data          Json
+  status        SubmissionStatus @default(PENDING)
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+enum SubmissionStatus {
+  PENDING
+  COMPLETED
+  REJECTED
+}
+
+model FormAnalytics {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  formId        String    @unique @db.ObjectId
+  form          Form      @relation(fields: [formId], references: [id])
+  views         Int       @default(0)
+  submissions   Int       @default(0)
+  averageTime   Float     @default(0)
+  bounceRate    Float     @default(0)
+  conversionRate Float    @default(0)
+  deviceStats   Json?
+  geoStats      Json?
+  lastUpdated   DateTime  @updatedAt
+}
+
+model Payment {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  formId        String    @db.ObjectId
+  form          Form      @relation(fields: [formId], references: [id])
+  amount        Float
+  currency      String
+  status        PaymentStatus
+  provider      String
+  transactionId String?
+  metadata      Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model Event {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  formId        String    @db.ObjectId
+  form          Form      @relation(fields: [formId], references: [id])
+  title         String
+  description   String?
+  startDate     DateTime
+  endDate       DateTime
+  location      String?
+  capacity      Int?
+  status        EventStatus @default(SCHEDULED)
+  metadata      Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+enum EventStatus {
+  SCHEDULED
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+model ActivityLog {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String    @db.ObjectId
+  user          User      @relation(fields: [userId], references: [id])
+  action        String
+  entityType    String
+  entityId      String
+  metadata      Json?
+  createdAt     DateTime  @default(now())
+}
+
+model SystemSettings {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  key           String    @unique
+  value         Json
+  updatedAt     DateTime  @updatedAt
+  updatedBy     String    @db.ObjectId
+}
+
+model SocialAccount {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String    @db.ObjectId
+  user          User      @relation(fields: [userId], references: [id])
+  platform      SocialPlatform
+  accessToken   String
+  refreshToken  String?
+  username      String
+  profileUrl    String?
+  connected     Boolean   @default(true)
+  privacySettings SocialPrivacySettings?
+  lastSync      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  posts         SocialPost[]
+}
+
+model SocialPrivacySettings {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  accountId     String    @unique @db.ObjectId
+  account       SocialAccount @relation(fields: [accountId], references: [id])
+  profileVisibility ProfileVisibility @default(PUBLIC)
+  messagePrivacy MessagePrivacy @default(CONNECTIONS)
+  connectionRequests ConnectionPrivacy @default(EVERYONE)
+  dataSharing    DataSharingSettings
+  thirdPartyAccess ThirdPartyAccessSettings
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+type DataSharingSettings {
+  shareProfile  Boolean @default(true)
+  shareActivity Boolean @default(true)
+  shareConnections Boolean @default(true)
+  shareInterests Boolean @default(true)
+  shareAnalytics Boolean @default(false)
+}
+
+type ThirdPartyAccessSettings {
+  allowApps     Boolean @default(true)
+  allowAnalytics Boolean @default(true)
+  allowMarketing Boolean @default(false)
+  allowIntegrations Boolean @default(true)
+  blockedApps   String[] @default([])
+}
+
+enum ProfileVisibility {
+  PUBLIC
+  CONNECTIONS
+  PRIVATE
+}
+
+enum MessagePrivacy {
+  EVERYONE
+  CONNECTIONS
+  NONE
+}
+
+enum ConnectionPrivacy {
+  EVERYONE
+  MUTUAL_CONNECTIONS
+  VERIFIED_ONLY
+  NONE
+}
+
+model SocialPost {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  accountId     String    @db.ObjectId
+  account       SocialAccount @relation(fields: [accountId], references: [id])
+  content       String
+  hashtags      String[]
+  mediaUrls     String[]
+  scheduledFor  DateTime?
+  publishedAt   DateTime?
+  status        PostStatus @default(DRAFT)
+  platform      SocialPlatform
+  engagement    PostEngagement?
+  analytics     PostAnalytics?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model PostEngagement {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  postId        String    @unique @db.ObjectId
+  post          SocialPost @relation(fields: [postId], references: [id])
+  likes         Int       @default(0)
+  comments      Int       @default(0)
+  shares        Int       @default(0)
+  clicks        Int       @default(0)
+  impressions   Int       @default(0)
+  reach         Int       @default(0)
+  updatedAt     DateTime  @updatedAt
+}
+
+model PostAnalytics {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  postId        String    @unique @db.ObjectId
+  post          SocialPost @relation(fields: [postId], references: [id])
+  demographics  Json?
+  locationData  Json?
+  deviceStats   Json?
+  timeStats     Json?
+  updatedAt     DateTime  @updatedAt
+}
+
+enum SocialPlatform {
+  TWITTER
+  LINKEDIN
+  FACEBOOK
+  INSTAGRAM
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  FAILED
+  ARCHIVED
+}
+
+model EmailSettings {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String    @unique @db.ObjectId
+  user          User      @relation(fields: [userId], references: [id])
+  provider      EmailProvider @default(SENDGRID)
+  apiKey        String
+  fromEmail     String
+  fromName      String
+  replyTo       String?
+  testMode      Boolean   @default(true)
+  trackOpens    Boolean   @default(true)
+  trackClicks   Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model EmailTemplate {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  description   String?
+  subject       String
+  body          String
+  mjmlTemplate  String?
+  type          EmailTemplateType
+  variables     Json?
+  category      String?
+  tags          String[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  workflows     EmailWorkflow[]
+}
+
+model EmailWorkflow {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  description   String?
+  nodes         Json
+  edges         Json
+  trigger       EmailTrigger
+  templateId    String    @db.ObjectId
+  template      EmailTemplate @relation(fields: [templateId], references: [id])
+  conditions    Json?
+  delay         Int?
+  priority      Int       @default(0)
+  retryCount    Int       @default(0)
+  maxRetries    Int       @default(3)
+  retryDelay    Int       @default(300)
+  active        Boolean   @default(true)
+  lastExecuted  DateTime?
+  executionCount Int      @default(0)
+  lastError     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model EmailLog {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String    @db.ObjectId
+  user          User      @relation(fields: [userId], references: [id])
+  templateId    String    @db.ObjectId
+  workflowId    String?   @db.ObjectId
+  status        EmailStatus
+  subject       String
+  recipient     String
+  deliveryAttempts Int    @default(0)
+  lastAttempt   DateTime?
+  nextAttempt   DateTime?
+  errorDetails  String?
+  metadata      Json?
+  openedAt      DateTime?
+  clickedAt     DateTime?
+  createdAt     DateTime  @default(now())
+}
+
+enum EmailProvider {
+  SENDGRID
+  MAILTRAP
+  SES
+}
+
+enum EmailTemplateType {
+  WELCOME
+  FORM_SUBMISSION
+  REMINDER
+  CONFIRMATION
+  ABANDONED_FORM
+  PASSWORD_RESET
+  EMAIL_VERIFICATION
+  CUSTOM
+}
+
+enum EmailTrigger {
+  FORM_SUBMISSION
+  USER_REGISTRATION
+  FORM_ABANDONED
+  SUBSCRIPTION_CHANGED
+  CUSTOM_EVENT
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+  BOUNCED
+  OPENED
+  CLICKED
+}
+
+model SocialWorkflow {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String    @db.ObjectId
+  user          User      @relation(fields: [userId], references: [id])
+  name          String
+  description   String?
+  nodes         Json
+  edges         Json
+  active        Boolean   @default(true)
+  history       WorkflowHistory[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model WorkflowHistory {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  workflowId    String    @db.ObjectId
+  workflow      SocialWorkflow @relation(fields: [workflowId], references: [id])
+  status        String
+  error         String?
+  metadata      Json?
+  createdAt     DateTime  @default(now())
+}
